@@ -324,7 +324,8 @@ export interface BoardSummary {
   live_size: number;
 }
 
-/** The protocols the board ranks, strongest first, with ranks 1..n. */
+/** The protocols the board ranks, strongest first, with ranks 1..n. The watchlist is the floor: every
+ *  watchlist slug is ranked, and the early radar only adds rankable pre-token protocols below it. */
 export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): BoardRow[] {
   const anchor = categoryMultiples(snapshot, model);
   const index = bySlug(snapshot.protocols);
