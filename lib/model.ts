@@ -190,6 +190,12 @@ export class SnapshotError extends Error {
 
 const DAY_MS = 86_400_000;
 
+/** The smallest implied value the model ever reports: a protocol never prices at zero or less. */
+const IMPLIED_MIN_USD = 1;
+
+/** The global multiple when the snapshot carries no live-token comparable at all. */
+const FALLBACK_GLOBAL_MULTIPLE = 0.25;
+
 /** A finite number, else `fallback`. */
 function finite(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
@@ -234,7 +240,7 @@ export function isComparable(p: SnapshotProtocol): boolean {
  */
 export function categoryMultiples(snapshot: Snapshot, model: ModelConstants = MODEL): { global: number; byCategory: Map<string, CategoryMultiple> } {
   const live = snapshot.protocols.filter(isComparable);
-  const global = live.length > 0 ? clamp(median(live.map((p) => p.mcap_usd! / p.tvl_usd)), model.multiple_floor, model.multiple_cap) : 0.25;
+  const global = live.length > 0 ? clamp(median(live.map((p) => p.mcap_usd! / p.tvl_usd)), model.multiple_floor, model.multiple_cap) : FALLBACK_GLOBAL_MULTIPLE;
   const byCat = new Map<string, number[]>();
   for (const p of live) {
     const key = p.category ?? 'Other';
@@ -263,6 +269,17 @@ export function multipleFor(category: string | null, anchor: { global: number; b
 
 const round4 = (n: number): number => Math.round(n * 1e4) / 1e4;
 
+/**
+ * The breadth bonus, on its own so the factor is named and documented in one place: 1.00 for a
+ * single-chain protocol, plus `breadth_per_chain` per extra chain up to `breadth_max_chains` extra
+ * chains, so the bonus tops out at 1 + breadth_per_chain x breadth_max_chains (1.10 under the
+ * shipped constants). A protocol live on more chains reaches more farmers.
+ */
+export function breadthMultiplier(chains: string[], model: ModelConstants = MODEL): number {
+  const extraChains = Math.min(Math.max(chains.length - 1, 0), model.breadth_max_chains);
+  return round4(1 + model.breadth_per_chain * extraChains);
+}
+
 /** The four multipliers and the implied value one protocol gets under `model` and the market anchor. */
 export function impliedValue(
   protocol: SnapshotProtocol,
@@ -280,10 +297,9 @@ export function impliedValue(
   const growthMult = round4(1 + (growthPct / 100) * model.growth_weight);
   const ageForModel = age ?? model.unknown_age_days;
   const maturityMult = round4(model.maturity_floor + (Math.min(Math.max(ageForModel, 0), model.maturity_days) / model.maturity_days) * model.maturity_range);
-  const extraChains = Math.min(Math.max(protocol.chains.length - 1, 0), model.breadth_max_chains);
-  const breadthMult = round4(1 + model.breadth_per_chain * extraChains);
+  const breadthMult = breadthMultiplier(protocol.chains, model);
   const base = protocol.tvl_usd * multipleR;
-  const implied = Math.max(1, Math.round(base * growthMult * maturityMult * breadthMult));
+  const implied = Math.max(IMPLIED_MIN_USD, Math.round(base * growthMult * maturityMult * breadthMult));
   return { implied, multiple: multipleR, comparables, growthPct, growthMult, maturityMult, breadthMult, age };
 }
 

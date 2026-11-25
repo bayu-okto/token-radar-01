@@ -347,7 +347,9 @@
       el('h2', { text: 'How implied value is computed' }),
       el('p', { class: 'sub', text: 'Every row is scored by one function of the snapshot figures. No protocol name is special-cased, and no row is hand-picked. The anchor is the market itself: each category is priced at the median market-cap-per-TVL of the live-token protocols in that category.' }),
       el('div', { class: 'formula' },
-        'implied = round( tvl_usd x category_multiple x (1 + clamp(change_7d, ' + m.growth_floor + ', ' + m.growth_cap + ') / 100 x ' + m.growth_weight + ') x (' + m.maturity_floor + ' + min(age_days, ' + m.maturity_days + ') / ' + m.maturity_days + ' x ' + m.maturity_range + ') x (1 + 0.02 x min(chains - 1, 5)) )'
+        // The breadth figures come from the model constants, not literals, so the printed formula can
+        // never drift from the arithmetic the board actually ran.
+        'implied = round( tvl_usd x category_multiple x (1 + clamp(change_7d, ' + m.growth_floor + ', ' + m.growth_cap + ') / 100 x ' + m.growth_weight + ') x (' + m.maturity_floor + ' + min(age_days, ' + m.maturity_days + ') / ' + m.maturity_days + ' x ' + m.maturity_range + ') x (1 + ' + m.breadth_per_chain + ' x min(chains - 1, ' + m.breadth_max_chains + ')) )'
       ),
       el('p', { class: 'sub', text: 'TVL and seven-day growth come from the snapshot. Age is the time since the protocol was first listed, the best record of how long it has run with no token on record; an unlisted age uses ' + m.unknown_age_days + ' days. A category with fewer than ' + m.min_comparables + ' live comparables borrows the global median of ' + DATA.global_multiple.toFixed(3) + ', and every multiple is clamped to ' + m.multiple_floor + '–' + m.multiple_cap + '. The early radar is every rankable pre-token protocol below the watchlist floor, and the live-token protocols are set aside with their market caps shown.' }),
       el('h3', { text: 'Category multiples, from the live-token protocols' }),
@@ -412,6 +414,10 @@
     } else {
       dialog.setAttribute('open', '');
     }
+    // Put keyboard focus on Close so the drawer is usable without a mouse from the moment it opens;
+    // Escape already closes it (see the keydown listener below), and focus makes that discoverable.
+    var closeBtn = dialog.querySelector('.close');
+    if (closeBtn) closeBtn.focus();
   }
 
   function render() {
