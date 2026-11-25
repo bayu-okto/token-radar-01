@@ -190,7 +190,12 @@ export class SnapshotError extends Error {
 
 const DAY_MS = 86_400_000;
 
-/** The smallest implied value the model ever reports: a protocol never prices at zero or less. */
+/**
+ * The smallest implied value the model ever reports: a protocol never prices at zero or less.
+ * The floor is a ranking invariant, not a rounding nicety — the board orders rows by a positive
+ * integer, and a zero would tie every worthless row at the bottom while saying nothing about
+ * which of them is less worthless. One dollar keeps the order total and the arithmetic honest.
+ */
 const IMPLIED_MIN_USD = 1;
 
 /** The global multiple when the snapshot carries no live-token comparable at all. */
@@ -237,6 +242,12 @@ export function isComparable(p: SnapshotProtocol): boolean {
  * category. A category with at least `min_comparables` live protocols is priced at a blend of its own
  * median and the global median; a thinner category borrows the global median outright. Every multiple
  * is clamped, so a thin or wild category cannot set an absurd price.
+ *
+ * Why the median, and why per category: the market's verdict on a category is written in the prices
+ * of the protocols in it that already trade. A mean would let one outlier set the price; a median
+ * listens to the middle of the pack. And categories are priced apart because they sell different
+ * things — a lending market's dollar of TVL is not a bridge's dollar of TVL, and scoring them by
+ * one shared multiple would reward the category, not the protocol.
  */
 export function categoryMultiples(snapshot: Snapshot, model: ModelConstants = MODEL): { global: number; byCategory: Map<string, CategoryMultiple> } {
   const live = snapshot.protocols.filter(isComparable);
@@ -274,13 +285,26 @@ const round4 = (n: number): number => Math.round(n * 1e4) / 1e4;
  * single-chain protocol, plus `breadth_per_chain` per extra chain up to `breadth_max_chains` extra
  * chains, so the bonus tops out at 1 + breadth_per_chain x breadth_max_chains (1.10 under the
  * shipped constants). A protocol live on more chains reaches more farmers.
+ *
+ * Breadth is deliberately the weakest factor: it can add at most ten percent, while the multiple
+ * alone can move the price thirty-fold. That ordering is a choice — reach matters, but a protocol
+ * spread thin across twelve chains is not thirty times a focused one. The cap also stops a
+ * chain-count race from swamping the price the market actually sets.
  */
 export function breadthMultiplier(chains: string[], model: ModelConstants = MODEL): number {
   const extraChains = Math.min(Math.max(chains.length - 1, 0), model.breadth_max_chains);
   return round4(1 + model.breadth_per_chain * extraChains);
 }
 
-/** The four multipliers and the implied value one protocol gets under `model` and the market anchor. */
+/**
+ * The four multipliers and the implied value one protocol gets under `model` and the market anchor.
+ *
+ * Growth and maturity stay separate on purpose: they measure different things. Growth is momentum —
+ * what the last seven days did. Maturity is endurance — how long the protocol has kept running
+ * without a token. A young protocol can spike and an old one can stall; folding both into one
+ * number would hide which one moved the score. Keeping them apart also keeps the board readable:
+ * the dashboard can point at one factor and say why a row sits where it does.
+ */
 export function impliedValue(
   protocol: SnapshotProtocol,
   asOf: string,
@@ -306,7 +330,13 @@ export function impliedValue(
 /** DefiLlama's version-marker rule: a name ending in a release is a pool of another protocol. */
 const VERSIONED = /\s(V\d+(\.\d+)?|v\d+(\.\d+)?|\d+\.\d+)$/;
 
-/** Whether a protocol is one the board may rank: pre-token, not an exchange, not a versioned pool. */
+/**
+ * Whether a protocol is one the board may rank: pre-token, not an exchange, not a versioned pool.
+ * Exchanges are left out because their token is the business, not a launch to anticipate — scoring
+ * one would price the exchange against protocols it has nothing in common with. Versioned pools are
+ * left out because they are a slice of another protocol's TVL, and ranking the slice beside the
+ * whole would double-count the same locked value.
+ */
 export function isRankable(p: SnapshotProtocol): boolean {
   return isPreToken(p) && p.category !== 'CEX' && !VERSIONED.test(p.name);
 }
@@ -325,7 +355,13 @@ export interface BoardSummary {
 }
 
 /** The protocols the board ranks, strongest first, with ranks 1..n. The watchlist is the floor: every
- *  watchlist slug is ranked, and the early radar only adds rankable pre-token protocols below it. */
+ *  watchlist slug is ranked, and the early radar only adds rankable pre-token protocols below it.
+ *
+ * Coverage is a promise, not a preference: the watchlist is a floor, so every slug on it appears
+ * even if its TVL has slipped, and the early radar only ever adds rows below that floor. Nothing
+ * is dropped for looking weak — a weak watchlist row still ranks, at the rank its numbers earn.
+ * That is what makes the board auditable: anyone can take the snapshot, count the watchlist, and
+ * check that every one of those slugs is present before asking anything about the order. */
 export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): BoardRow[] {
   const anchor = categoryMultiples(snapshot, model);
   const index = bySlug(snapshot.protocols);
@@ -611,7 +647,13 @@ export function parseSnapshot(text: string): Snapshot {
   };
 }
 
-/** Why a board is not one the gate will take, or null: coverage, ranks, order, one shared implied value, and farm steps. */
+/**
+ * Why a board is not one the gate will take, or null: coverage, ranks, order, one shared implied
+ * value, and farm steps. The checks run from the most basic to the most specific — a board that
+ * misses a watchlist slug is refused before anyone looks at its numbers, because a ranking that
+ * silently drops rows is worse than a ranking that orders them badly. The shared-value check
+ * catches the degenerate case: if every row prices the same, the model has said nothing at all.
+ */
 export function boardIssue(board: BoardRow[], snapshot: Snapshot): string | null {
   const slugs = new Set(board.map((r) => r.slug));
   const missing = snapshot.watchlist.filter((s) => !slugs.has(s));

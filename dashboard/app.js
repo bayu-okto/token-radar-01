@@ -7,7 +7,7 @@
   var DATA = window.RADAR;
   if (!DATA) return;
   var app = document.getElementById('board');
-  var state = { q: '', category: 'all', chain: 'all', tab: 'pre-token', sort: 'implied', dir: -1, selected: null };
+  var state = { q: '', category: 'all', chain: 'all', tab: 'pre-token', sort: 'implied', dir: -1, selected: null, scoreOpen: false, scoreSlug: null };
 
   var usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
   function fmtUsd(n) {
@@ -367,6 +367,93 @@
     );
   }
 
+  // The score lab: a second, hands-on way to read the model. Pick any ranked protocol and the panel
+  // walks through its five factors one at a time, multiplying them in front of you, so the single
+  // implied-value number stops being a black box. Everything it shows comes from the row itself — the
+  // same rounded multipliers board.json carries — so the lab's product is the board's number.
+  function scoreFactorRow(label, detail, value) {
+    return el('div', { class: 'score-row' },
+      el('div', null, el('span', { text: label }), el('span', { class: 'sub', text: detail })),
+      el('b', { class: 'num', text: value })
+    );
+  }
+
+  function scoreLab() {
+    var toggle = el('button', {
+      type: 'button', class: 'score-toggle', 'aria-expanded': state.scoreOpen ? 'true' : 'false',
+      onclick: function () { state.scoreOpen = !state.scoreOpen; render(); }
+    }, state.scoreOpen ? 'Hide the score lab' : 'Open the score lab: multiply a row yourself');
+    var head = el('div', { class: 'score-head' },
+      el('h2', { text: 'Score lab: multiply a row yourself' }),
+      toggle
+    );
+    if (!state.scoreOpen) return el('section', { class: 'panel score' }, head);
+    var picked = DATA.rows.filter(function (r) { return r.slug === state.scoreSlug; })[0] || DATA.rows[0];
+    var select = el('select', { id: 'score-pick', 'aria-label': 'Pick a protocol to multiply' },
+      DATA.rows.map(function (r) {
+        return el('option', { value: r.slug, text: '#' + r.rank + ' ' + r.name, selected: r.slug === picked.slug ? 'selected' : null });
+      })
+    );
+    select.addEventListener('change', function () { state.scoreSlug = select.value; render(); });
+    var recomputed = impliedOf(picked);
+    var steps = el('div', { class: 'score-grid' },
+      scoreFactorRow('TVL', 'the size of the thing being priced', fmtUsd(picked.tvl_usd)),
+      scoreFactorRow('Category multiple', (picked.category || 'Other') + ' · ' + picked.comparables + ' live comparables' + (picked.comparables < 3 ? ' — borrows the global median' : ''), String(picked.category_multiple)),
+      scoreFactorRow('Growth multiplier', 'seven-day TVL change ' + fmtPct(picked.change_7d) + ', weighted 0.6', String(picked.growth_multiplier)),
+      scoreFactorRow('Maturity multiplier', 'listed ' + fmtAge(picked.age_days) + ' ago with no token on record', String(picked.maturity_multiplier)),
+      scoreFactorRow('Breadth multiplier', (picked.chains || []).length + ' chains, +2% per extra chain up to +10%', String(picked.breadth_multiplier)),
+      scoreFactorRow('Implied value', 'the board carries ' + fmtUsd(picked.implied_value_usd), fmtUsd(recomputed))
+    );
+    var notes = el('ul', { class: 'score-notes' },
+      el('li', { text: 'Category multiple is the only factor the protocol cannot move on its own — it is set by what the market pays its category.' }),
+      el('li', { text: 'Growth helps, but the 0.6 weight and the clamp keep one hot week from rewriting the score.' }),
+      el('li', { text: 'Maturity runs from 0.55 for a fresh listing to 1.00 after three years with no token.' }),
+      el('li', { text: 'Breadth adds 2% per extra chain and stops at five extra chains.' }),
+      el('li', { text: 'The floor: a row never prices below $1, so the board always ranks by a positive number.' })
+    );
+    var verdict = el('p', { class: 'score-verdict' },
+      recomputed === picked.implied_value_usd
+        ? 'The lab multiplies to ' + fmtUsd(recomputed) + ', exactly the number the board carries for ' + picked.name + '.'
+        : 'The lab multiplies to ' + fmtUsd(recomputed) + ', which differs from the board: the data beside this page would be stale.'
+    );
+    return el('section', { class: 'panel score' }, head,
+      el('p', { class: 'sub', text: 'One row, five factors, multiplied in front of you. The growth and maturity multipliers are rounded to four decimals, so the product lands exactly on the number the board carries.' }),
+      el('div', { class: 'field' }, el('label', { for: 'score-pick', text: 'Protocol' }), select),
+      steps,
+      notes,
+      verdict
+    );
+  }
+
+  // The movers: the week's fastest risers and fallers by seven-day TVL change. The board ranks by
+  // implied value, so a protocol can climb this list without climbing the board — momentum and size
+  // are different stories, and this panel tells the momentum one.
+  function moverRow(r) {
+    return el('li', {
+      tabindex: '0',
+      onclick: function () { openDetail(r.slug); },
+      onkeydown: function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(r.slug); } }
+    },
+      el('span', { class: 'num', text: '#' + r.rank }),
+      el('b', { text: r.name }),
+      el('span', { class: 'num ' + (r.change_7d >= 0 ? 'pos' : 'neg'), text: fmtPct(r.change_7d) })
+    );
+  }
+
+  function moversPanel() {
+    var withChange = DATA.rows.filter(function (r) { return r.change_7d !== null && isFinite(r.change_7d); });
+    var gainers = withChange.slice().sort(function (a, b) { return b.change_7d - a.change_7d; }).slice(0, 5);
+    var losers = withChange.slice().sort(function (a, b) { return a.change_7d - b.change_7d; }).slice(0, 5);
+    return el('section', { class: 'panel movers' },
+      el('h2', { text: 'Movers: the week in TVL' }),
+      el('p', { class: 'sub', text: 'The fastest risers and fallers by seven-day TVL change. Momentum is one factor of five — a protocol can top this list without topping the board. Select a mover to open its detail drawer.' }),
+      el('div', { class: 'movers-grid' },
+        el('div', null, el('h3', { text: 'Fastest risers' }), el('ol', { class: 'movers-list' }, gainers.map(moverRow))),
+        el('div', null, el('h3', { text: 'Fastest fallers' }), el('ol', { class: 'movers-list' }, losers.map(moverRow)))
+      )
+    );
+  }
+
   var dialog = el('dialog', { class: 'detail', id: 'detail', 'aria-labelledby': 'detail-title' });
   dialog.addEventListener('close', function () { state.selected = null; writeHash(); });
 
@@ -428,7 +515,11 @@
     shell.appendChild(top5());
     shell.appendChild(controls());
     shell.appendChild(state.tab === 'pre-token' ? boardTable() : liveTable());
-    if (state.tab === 'pre-token') shell.appendChild(modelPanel());
+    if (state.tab === 'pre-token') {
+      shell.appendChild(scoreLab());
+      shell.appendChild(moversPanel());
+      shell.appendChild(modelPanel());
+    }
     app.appendChild(shell);
     app.setAttribute('aria-busy', 'false');
     if (!dialog.isConnected) app.appendChild(dialog);

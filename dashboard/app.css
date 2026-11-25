@@ -156,11 +156,34 @@ tbody tr[data-selected="true"] { background: var(--accent-soft); }
 .steps b { display: block; font-weight: 500; }
 .cost { color: var(--muted); font-size: 12px; font-family: var(--font-num); }
 
+/* The score lab: one row multiplied in front of you. */
+.score { margin-top: var(--step-4); padding: var(--step-5); display: grid; gap: var(--step-3); }
+.score-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--step-4); flex-wrap: wrap; }
+.score-toggle { min-height: 36px; padding: 0 var(--step-4); border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); }
+.score-toggle:hover { border-color: var(--accent); }
+.score-grid { display: grid; gap: var(--step-2); border-top: 1px solid var(--border); padding-top: var(--step-3); }
+.score-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--step-4); }
+.score-row > div { display: grid; gap: 2px; min-width: 0; }
+.score-row .sub { overflow-wrap: anywhere; }
+.score-notes { margin: 0; padding-left: var(--step-5); display: grid; gap: var(--step-1); color: var(--muted); font-size: 13px; }
+.score-verdict { font-weight: 600; }
+.score select { min-height: 36px; padding: 0 var(--step-3); border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); }
+
+/* The movers: the week's fastest risers and fallers. */
+.movers { margin-top: var(--step-4); padding: var(--step-5); display: grid; gap: var(--step-3); }
+.movers-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--step-5); }
+.movers-list { margin: 0; padding-left: var(--step-5); display: grid; gap: var(--step-2); }
+.movers-list li { display: flex; align-items: baseline; gap: var(--step-3); cursor: pointer; border-radius: var(--radius-control); }
+.movers-list li:hover { background: var(--accent-soft); }
+.movers-list li b { font-weight: 600; overflow-wrap: anywhere; }
+.movers-list li .num:last-child { margin-left: auto; }
+
 @media (max-width: 900px) {
   .shell { padding: var(--step-4); }
   .lede { grid-template-columns: 1fr; gap: var(--step-4); }
   .facts { border-left: 0; border-top: 1px solid var(--border); padding-left: 0; padding-top: var(--step-4); }
   .top5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .movers-grid { grid-template-columns: 1fr; }
   .field input { min-width: 0; width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) {
